@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                  xmlns:modeler="http://camunda.org/schema/modeler/1.0"
+                  id="Definitions_FDOpening"
+                  targetNamespace="http://camunda.org/schema/1.0/bpmn"
+                  exporter="Camunda Modeler"
+                  exporterVersion="5.x">
+
+  <bpmn:process id="fd-opening-process"
+                name="FD Opening Process"
+                isExecutable="true">
+
+    <!-- ─── Process-level variables expected from BFF ───────────────────
+         applicationId   : String  – unique FD application ID (S3 key prefix)
+         journeyType     : String  – SELF_SERVICE | ASSISTED
+         customerId      : String  – redacted customer ID
+         channelId       : String  – MOBILE | RIB | BRANCH
+         status          : String  – managed by job workers
+    ──────────────────────────────────────────────────────────────────── -->
+
+    <!-- START -->
+    <bpmn:startEvent id="StartEvent_FDInitiated" name="FD journey initiated">
+      <bpmn:outgoing>Flow_Start_To_Validate</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- ─── SERVICE TASK 1: Validate FD ─────────────────────────────── -->
+    <bpmn:serviceTask id="Task_ValidateFD" name="Validate FD request">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="fd-validate" retries="3"/>
+        <zeebe:taskHeaders>
+          <zeebe:header key="timeoutMs" value="10000"/>
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Start_To_Validate</bpmn:incoming>
+      <bpmn:outgoing>Flow_Validate_To_Gateway</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ─── GATEWAY: journeyType ──────────────────────────────────────── -->
+    <bpmn:exclusiveGateway id="Gateway_JourneyType" name="Journey type?">
+      <bpmn:incoming>Flow_Validate_To_Gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_Gateway_SelfService</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Gateway_Assisted</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- ─── SERVICE TASK 2: Persist Draft (SELF_SERVICE only) ────────── -->
+    <bpmn:serviceTask id="Task_PersistDraft" name="Persist FD in DRAFT state">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="fd-persist-draft" retries="3"/>
+        <zeebe:taskHeaders>
+          <zeebe:header key="timeoutMs" value="5000"/>
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Gateway_SelfService</bpmn:incoming>
+      <bpmn:outgoing>Flow_Draft_To_WaitReview</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ─── INTERMEDIATE CATCH EVENT: Wait for customer review/submit ── -->
+    <bpmn:intermediateCatchEvent id="Event_WaitCustomerSubmit"
+                                  name="Wait for customer submit">
+      <bpmn:incoming>Flow_Draft_To_WaitReview</bpmn:incoming>
+      <bpmn:outgoing>Flow_WaitReview_To_OpenCBS</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageDef_CustomerSubmit"
+                                    messageRef="Message_CustomerSubmit"/>
+    </bpmn:intermediateCatchEvent>
+
+    <!-- ─── SERVICE TASK 3: Open FD in CBS ───────────────────────────── -->
+    <bpmn:serviceTask id="Task_OpenFDInCBS" name="Open FD in CBS">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="fd-cbs-open" retries="3"/>
+        <zeebe:taskHeaders>
+          <zeebe:header key="timeoutMs" value="30000"/>
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_WaitReview_To_OpenCBS</bpmn:incoming>
+      <bpmn:incoming>Flow_Gateway_Assisted</bpmn:incoming>
+      <bpmn:outgoing>Flow_OpenCBS_To_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- ─── END EVENT ─────────────────────────────────────────────────── -->
+    <bpmn:endEvent id="EndEvent_FDOpened" name="FD account opened">
+      <bpmn:incoming>Flow_OpenCBS_To_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- ─── BOUNDARY ERROR EVENT on Validate ────────────────────────── -->
+    <bpmn:boundaryEvent id="BoundaryError_Validate"
+                         attachedToRef="Task_ValidateFD"
+                         cancelActivity="true">
+      <bpmn:outgoing>Flow_ValidationError_To_End</bpmn:outgoing>
+      <bpmn:errorEventDefinition id="ErrorDef_Validate"
+                                  errorRef="Error_ValidationFailed"/>
+    </bpmn:boundaryEvent>
+
+    <!-- ─── BOUNDARY ERROR EVENT on CBS Open ────────────────────────── -->
+    <bpmn:boundaryEvent id="BoundaryError_CBS"
+                         attachedToRef="Task_OpenFDInCBS"
+                         cancelActivity="true">
+      <bpmn:outgoing>Flow_CBSError_To_End</bpmn:outgoing>
+      <bpmn:errorEventDefinition id="ErrorDef_CBS"
+                                  errorRef="Error_CBSFailure"/>
+    </bpmn:boundaryEvent>
+
+    <!-- ─── ERROR END EVENTS ──────────────────────────────────────────── -->
+    <bpmn:endEvent id="EndEvent_ValidationFailed" name="Validation failed">
+      <bpmn:incoming>Flow_ValidationError_To_End</bpmn:incoming>
+      <bpmn:errorEventDefinition id="ErrorEndDef_Validation"
+                                  errorRef="Error_ValidationFailed"/>
+    </bpmn:endEvent>
+
+    <bpmn:endEvent id="EndEvent_CBSFailed" name="CBS open failed">
+      <bpmn:incoming>Flow_CBSError_To_End</bpmn:incoming>
+      <bpmn:errorEventDefinition id="ErrorEndDef_CBS"
+                                  errorRef="Error_CBSFailure"/>
+    </bpmn:endEvent>
+
+    <!-- ─── SEQUENCE FLOWS ────────────────────────────────────────────── -->
+    <bpmn:sequenceFlow id="Flow_Start_To_Validate"
+                        sourceRef="StartEvent_FDInitiated"
+                        targetRef="Task_ValidateFD"/>
+
+    <bpmn:sequenceFlow id="Flow_Validate_To_Gateway"
+                        sourceRef="Task_ValidateFD"
+                        targetRef="Gateway_JourneyType"/>
+
+    <bpmn:sequenceFlow id="Flow_Gateway_SelfService"
+                        name="SELF_SERVICE"
+                        sourceRef="Gateway_JourneyType"
+                        targetRef="Task_PersistDraft">
+      <bpmn:conditionExpression>= journeyType = "SELF_SERVICE"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="Flow_Gateway_Assisted"
+                        name="ASSISTED"
+                        sourceRef="Gateway_JourneyType"
+                        targetRef="Task_OpenFDInCBS">
+      <bpmn:conditionExpression>= journeyType = "ASSISTED"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+
+    <bpmn:sequenceFlow id="Flow_Draft_To_WaitReview"
+                        sourceRef="Task_PersistDraft"
+                        targetRef="Event_WaitCustomerSubmit"/>
+
+    <bpmn:sequenceFlow id="Flow_WaitReview_To_OpenCBS"
+                        sourceRef="Event_WaitCustomerSubmit"
+                        targetRef="Task_OpenFDInCBS"/>
+
+    <bpmn:sequenceFlow id="Flow_OpenCBS_To_End"
+                        sourceRef="Task_OpenFDInCBS"
+                        targetRef="EndEvent_FDOpened"/>
+
+    <bpmn:sequenceFlow id="Flow_ValidationError_To_End"
+                        sourceRef="BoundaryError_Validate"
+                        targetRef="EndEvent_ValidationFailed"/>
+
+    <bpmn:sequenceFlow id="Flow_CBSError_To_End"
+                        sourceRef="BoundaryError_CBS"
+                        targetRef="EndEvent_CBSFailed"/>
+
+  </bpmn:process>
+
+  <!-- ─── MESSAGE DEFINITION ───────────────────────────────────────────── -->
+  <bpmn:message id="Message_CustomerSubmit"
+                 name="customer-fd-submit">
+    <!-- Correlated from BFF using applicationId as correlationKey -->
+  </bpmn:message>
+
+  <!-- ─── ERROR DEFINITIONS ────────────────────────────────────────────── -->
+  <bpmn:error id="Error_ValidationFailed"
+               name="FD_VALIDATION_FAILED"
+               errorCode="FD_VALIDATION_FAILED"/>
+
+  <bpmn:error id="Error_CBSFailure"
+               name="FD_CBS_FAILURE"
+               errorCode="FD_CBS_FAILURE"/>
+
+</bpmn:definitions>

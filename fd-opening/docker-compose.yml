@@ -1,0 +1,151 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Local dev stack for FD Opening
+#   - Camunda Platform 8 (Zeebe + Operate + Tasklist)
+#   - PostgreSQL (FD application state)
+#   - LocalStack (S3 simulation)
+#   - Mobile BFF
+#   - Job Worker
+#   - FD Domain Service
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Camunda Zeebe ──────────────────────────────────────────────────────────
+  zeebe:
+    image: camunda/zeebe:8.5.0
+    container_name: zeebe
+    ports:
+      - "26500:26500"   # gRPC gateway
+      - "9600:9600"     # monitoring
+    environment:
+      ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_CLASSNAME: io.camunda.zeebe.exporter.ElasticsearchExporter
+      ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_URL: http://elasticsearch:9200
+      ZEEBE_BROKER_GATEWAY_ENABLE: "true"
+    depends_on:
+      - elasticsearch
+    networks:
+      - fd-net
+
+  # ── Operate (Zeebe process dashboard) ────────────────────────────────────
+  operate:
+    image: camunda/operate:8.5.0
+    container_name: operate
+    ports:
+      - "8081:8080"
+    environment:
+      CAMUNDA_OPERATE_ZEEBE_GATEWAYADDRESS: zeebe:26500
+      CAMUNDA_OPERATE_ELASTICSEARCH_URL: http://elasticsearch:9200
+    depends_on:
+      - zeebe
+      - elasticsearch
+    networks:
+      - fd-net
+
+  # ── Elasticsearch (Zeebe exporter) ───────────────────────────────────────
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    container_name: elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    networks:
+      - fd-net
+
+  # ── PostgreSQL (FD state DB) ──────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: fd-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB:       fddb
+      POSTGRES_USER:     fduser
+      POSTGRES_PASSWORD: fdpass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./fd-domain-service/src/main/resources/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    networks:
+      - fd-net
+
+  # ── LocalStack (S3 simulation) ────────────────────────────────────────────
+  localstack:
+    image: localstack/localstack:3.4
+    container_name: localstack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: s3
+      DEFAULT_REGION: ap-south-1
+      AWS_DEFAULT_REGION: ap-south-1
+    volumes:
+      - "./scripts/localstack-init.sh:/etc/localstack/init/ready.d/init.sh"
+    networks:
+      - fd-net
+
+  # ── Mobile BFF ────────────────────────────────────────────────────────────
+  mobile-bff:
+    build: ./mobile-bff
+    container_name: mobile-bff
+    ports:
+      - "8080:8080"
+    environment:
+      ZEEBE_GATEWAY_ADDRESS:    zeebe:26500
+      S3_FD_PAYLOAD_BUCKET:     fd-payload-bucket
+      AWS_REGION:               ap-south-1
+      AWS_ACCESS_KEY_ID:        test
+      AWS_SECRET_ACCESS_KEY:    test
+      AWS_ENDPOINT_OVERRIDE:    http://localstack:4566
+      FD_DOMAIN_SERVICE_URL:    http://fd-domain-service:8082
+    depends_on:
+      - zeebe
+      - localstack
+      - fd-domain-service
+    networks:
+      - fd-net
+
+  # ── Job Worker ────────────────────────────────────────────────────────────
+  fd-job-worker:
+    build: ./job-worker
+    container_name: fd-job-worker
+    environment:
+      ZEEBE_GATEWAY_ADDRESS:  zeebe:26500
+      S3_FD_PAYLOAD_BUCKET:   fd-payload-bucket
+      AWS_REGION:             ap-south-1
+      AWS_ACCESS_KEY_ID:      test
+      AWS_SECRET_ACCESS_KEY:  test
+      AWS_ENDPOINT_OVERRIDE:  http://localstack:4566
+      FD_DOMAIN_SERVICE_URL:  http://fd-domain-service:8082
+    depends_on:
+      - zeebe
+      - localstack
+      - fd-domain-service
+    networks:
+      - fd-net
+
+  # ── FD Domain Service ──────────────────────────────────────────────────────
+  fd-domain-service:
+    build: ./fd-domain-service
+    container_name: fd-domain-service
+    ports:
+      - "8082:8082"
+    environment:
+      DB_URL:     r2dbc:postgresql://postgres:5432/fddb
+      DB_USER:    fduser
+      DB_PASS:    fdpass
+      CBS_BASE_URL: http://cbs-mock:9090   # replace with real CBS in prod
+    depends_on:
+      - postgres
+    networks:
+      - fd-net
+
+volumes:
+  pgdata:
+
+networks:
+  fd-net:
+    driver: bridge

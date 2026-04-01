@@ -1,0 +1,40 @@
+server:
+  port: 9998
+
+spring:
+  application:
+    name: $lservice
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    
+
+#httpclient:
+#  reactiveHttpClient: retry
+
+http:
+  connection:
+     max-total-connection: 60
+     max-connection-per-route: 60
+#     socket-timeout: 30 
+#     connection-timeout: 30
+#     timeout-to-live: 5 
+
+httpcall:
+  retry:
+    max: 4
+    delay: 2
+    delayUnit: seconds
+    isFixedDelay: true
+#    delay: 200
+#    delayUnit: millis
+
+
+ctmcred:
+  req: true
+  certs-creds:
+  - ctmId: email-cred
+    type: SECRETS
+    url: ${DB_SEC_URL:http://sandbox-service.uat.svc.cluster.local:8080/v1/fetch/path/api/v1/ctm/fetchsecrete}
+    keys: ${CTM_KEYS:{'EMAIL_KEY':'a13ab9cff0b94cb8a23075765df235f58837650cf97b454f8509a010379a67d8'}}
