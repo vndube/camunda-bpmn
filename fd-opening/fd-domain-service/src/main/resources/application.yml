@@ -1,40 +1,39 @@
-server:
-  port: 9998
-
 spring:
   application:
-    name: $lservice
+    name: fd-domain-service
+  webflux:
+    base-path: /internal
 
-springdoc:
-  swagger-ui:
-    path: /swagger-ui.html
-    
+server:
+  port: 8082
 
-#httpclient:
-#  reactiveHttpClient: retry
+# ── AWS S3 ─────────────────────────────────────────────────────────────────
+aws:
+  s3:
+    bucket-name: ${S3_FD_PAYLOAD_BUCKET:fd-payload-bucket}
+    region: ${AWS_REGION:ap-south-1}
+    prefix: fd-requests/
 
-http:
-  connection:
-     max-total-connection: 60
-     max-connection-per-route: 60
-#     socket-timeout: 30 
-#     connection-timeout: 30
-#     timeout-to-live: 5 
+# ── CBS Adapter ────────────────────────────────────────────────────────────
+cbs:
+  base-url: ${CBS_BASE_URL:http://cbs-host:9090}
+  timeout-seconds: 25
+  connect-timeout-seconds: 5
+  channel-id: DBP
+  auth:
+    client-id: ${CBS_CLIENT_ID:dbp-client}
+    client-secret: ${CBS_CLIENT_SECRET:}
 
-httpcall:
-  retry:
-    max: 4
-    delay: 2
-    delayUnit: seconds
-    isFixedDelay: true
-#    delay: 200
-#    delayUnit: millis
+# ── DBP Application State DB ───────────────────────────────────────────────
+spring.r2dbc:
+  url: ${DB_URL:r2dbc:postgresql://localhost:5432/fddb}
+  username: ${DB_USER:bwgdbuser}
+  password: ${DB_PASS:bwgdbpass}
+  hikari:
+    maximum-pool-size: 10
+    minimum-idle: 2
 
-
-ctmcred:
-  req: true
-  certs-creds:
-  - ctmId: email-cred
-    type: SECRETS
-    url: ${DB_SEC_URL:http://sandbox-service.uat.svc.cluster.local:8080/v1/fetch/path/api/v1/ctm/fetchsecrete}
-    keys: ${CTM_KEYS:{'EMAIL_KEY':'a13ab9cff0b94cb8a23075765df235f58837650cf97b454f8509a010379a67d8'}}
+# ── Logging ────────────────────────────────────────────────────────────────
+logging:
+  level:
+    com.bank: DEBUG

@@ -100,6 +100,12 @@ public class FdDomainService {
             });
     }
 
+    // ─── 4. Get application by ID ─────────────────────────────────────────
+
+    public Mono<FdApplication> getApplicationById(String applicationId) {
+        return repository.findById(applicationId);
+    }
+
     // ─── helper ───────────────────────────────────────────────────────────
 
     private FdApplication buildApplication(String applicationId,

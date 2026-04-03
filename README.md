@@ -10,6 +10,30 @@ fd-opening/
 ├── fd-domain-service/           FD Domain Service (Spring WebFlux + R2DBC)
 └── docker-compose.yml           Local dev stack
 ```
+graph TD
+  mobile_bff[Mobile BFF]
+  operate[Operate]
+  zeebe[ZeeBee]
+  fd_job_worker[FD_Job_worker]
+  fd_domain_service[FD_Domain_Service]
+  localstack[LocalStack-S3]
+  elasticsearch[Elastic Search]
+  postgres[PostreSQL DB]
+
+
+  mobile_bff -.-> | 2. initiate, complete | zeebe
+  mobile_bff ---> | 1. put payload| localstack
+  zeebe ---> | state events | elasticsearch
+  operate ---> | monitor, troubleshoot, and manage workflow instances| elasticsearch
+  zeebe -.-> | request | fd_job_worker
+  fd_job_worker -.-> | response | zeebe
+  fd_job_worker ---> | fetch payload| localstack
+  fd_job_worker ---> | validate | fd_domain_service
+  fd_job_worker ---> | persist in draft | fd_domain_service
+  fd_job_worker ---> | open in CBS | fd_domain_service
+  fd_domain_service ---> | persist | postgres
+
+  
 
 ---
 

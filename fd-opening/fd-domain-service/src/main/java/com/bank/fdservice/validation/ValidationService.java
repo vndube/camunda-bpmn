@@ -1,15 +1,13 @@
 package com.bank.fdservice.validation;
 
-import com.bank.fdservice.model.FdApplication;
+import java.math.BigDecimal;
+import java.util.Map;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Mono;
 
-import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import reactor.core.publisher.Mono;
 
 /**
  * Orchestrates all three FD validations in sequence:

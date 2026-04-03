@@ -1,25 +1,26 @@
 package com.bank.jobworker.worker;
 
-import com.bank.jobworker.service.FdDomainClient;
-import com.bank.jobworker.service.S3PayloadFetcher;
-import io.camunda.zeebe.client.api.response.ActivatedJob;
-import io.camunda.zeebe.client.api.worker.JobClient;
-import io.camunda.zeebe.spring.client.annotation.JobWorker;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
+import com.bank.jobworker.service.FdDomainClient;
+import com.bank.jobworker.service.S3PayloadFetcher;
+
+import io.camunda.zeebe.client.api.response.ActivatedJob;
+import io.camunda.zeebe.client.api.response.CompleteJobResponse;
+import io.camunda.zeebe.client.api.response.FailJobResponse;
+import io.camunda.zeebe.client.api.worker.JobClient;
+import io.camunda.zeebe.spring.client.annotation.JobWorker;
+import reactor.core.publisher.Mono;
 
 /**
  * Zeebe Job Worker: fd-validate
  *
- * Responsibilities:
- *   1. Extract applicationId from Zeebe job variables
- *   2. Fetch full payload from S3
- *   3. Call FD Domain Service for validation
- *   4. Complete job with validation result variables
- *   5. Throw BPMN error on validation failure → Zeebe boundary event handles it
+ * Responsibilities: Fetch S3 -> Call Domain -> Complete or Throw BPMN Error (Reactive).
  */
 @Component
 public class FdValidateWorker {
@@ -35,50 +36,56 @@ public class FdValidateWorker {
         this.fdDomainClient   = fdDomainClient;
     }
 
-    @JobWorker(type = "fd-validate", autoComplete = false)
-    public void handleFdValidate(JobClient jobClient, ActivatedJob job) {
+    @JobWorker(type = "fd-validate")
+    public Mono<Void> handleFdValidate(JobClient jobClient, ActivatedJob job) {
         String applicationId = (String) job.getVariablesAsMap().get("applicationId");
         String journeyType   = (String) job.getVariablesAsMap().get("journeyType");
 
         log.info("FdValidateWorker started applicationId={} journeyType={}", applicationId, journeyType);
 
-        try {
-            // 1. Fetch payload from S3 (full request)
-            Map<String, Object> payload = s3PayloadFetcher.fetchPayload(applicationId);
+        // 1. Fetch payload from S3 (Reactive)
+        return s3PayloadFetcher.fetchPayload(applicationId)
+            // 2. Chain Domain Validation Call (Reactive)
+            .flatMap(payload -> fdDomainClient.validateFd(applicationId, payload))
+            // 3. Coordinate Zeebe Response based on Result (Reactive)
+            .flatMap(result -> {
+                if (!result.valid()) {
+                    // Business Logic Violation -> Throw BPMN error reactively
+                    log.warn("FD validation failed applicationId={} reason={}", applicationId, result.reason());
+						CompletableFuture<Void> standardFuture = 
+								jobClient.newThrowErrorCommand(job.getKey())
+								.errorCode(ERROR_CODE)
+								.errorMessage(result.reason())
+								.send()
+								.toCompletableFuture();
+                    
+                    return Mono.fromFuture(standardFuture).then();
+                }
 
-            // 2. Call Domain Service for validations
-            FdDomainClient.ValidationResult result =
-                fdDomainClient.validateFd(applicationId, payload);
-
-            if (!result.valid()) {
-                // Throw BPMN error → boundary event catches it in the process
-                log.warn("FD validation failed applicationId={} reason={}", applicationId, result.reason());
-                jobClient.newThrowErrorCommand(job.getKey())
-                    .errorCode(ERROR_CODE)
-                    .errorMessage(result.reason())
-                    .send()
-                    .join();
-                return;
-            }
-
-            // 3. Complete job – pass validation outcome as Zeebe variables
-            log.info("FD validation passed applicationId={}", applicationId);
-            jobClient.newCompleteCommand(job.getKey())
+                // Success -> Complete job reactively with variables
+                log.info("FD validation passed applicationId={}", applicationId);
+                
+                CompletableFuture<CompleteJobResponse> zeebeFuture =
+                jobClient.newCompleteCommand(job.getKey())
                 .variables(Map.of(
                     "validationStatus",  "PASSED",
                     "validationDetails", result.details() != null ? result.details() : Map.of()
                 ))
-                .send()
-                .join();
-
-        } catch (Exception e) {
-            log.error("FdValidateWorker unexpected error applicationId={}", applicationId, e);
-            // Fail job with retries – Zeebe will retry based on task definition retries=3
-            jobClient.newFailCommand(job.getKey())
+                .send().toCompletableFuture();
+                return Mono.fromFuture(zeebeFuture).then();
+            })
+            // 4. Handle Unexpected Technical Error
+            .onErrorResume(e -> {
+                log.error("FdValidateWorker unexpected error applicationId={}", applicationId, e);
+                
+                CompletableFuture<FailJobResponse> failedFuture =
+                jobClient.newFailCommand(job.getKey())
                 .retries(job.getRetries() - 1)
                 .errorMessage("Unexpected error: " + e.getMessage())
-                .send()
-                .join();
-        }
+                .send().toCompletableFuture();
+                return Mono.fromFuture(failedFuture).then();
+            });
+//            // 5. Transform final flow to Mono<Void>
+//            .then();
     }
 }

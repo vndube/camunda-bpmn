@@ -8,6 +8,28 @@ version: "3.9"
 #   - Mobile BFF
 #   - Job Worker
 #   - FD Domain Service
+# ---------------mermaid script --------------------
+# graph TD
+#   mobile_bff[Mobile BFF]
+#   operate[Operate]
+#   zeebe[ZeeBee]
+#   fd_job_worker[FD_Job_worker]
+#   fd_domain_service[FD_Domain_Service]
+#   localstack[LocalStack-S3]
+#   elasticsearch[Elastic Search]
+#   postgres[PostreSQL DB]
+# 
+# 
+#   mobile_bff -.-> zeebe
+#   mobile_bff ---> localstack
+#   mobile_bff ---> fd_domain_service
+#   zeebe ---> elasticsearch
+#   operate ---> zeebe
+#   operate ---> elasticsearch
+#   fd_job_worker ---> zeebe
+#   fd_job_worker ---> localstack
+#   fd_job_worker ---> fd_domain_service
+#   fd_domain_service ---> postgres
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:

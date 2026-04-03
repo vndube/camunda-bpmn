@@ -45,12 +45,14 @@ public class FdOpeningController {
         return fdOpeningService.initiateFdJourney(request)
             .map(result -> ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(Map.of(
+                .body(
+                		Map.<String, Object>of( 
                     "applicationId",      result.applicationId(),
                     "processInstanceKey", result.processInstanceKey(),
                     "status",             "INITIATED",
                     "message",            "FD journey initiated. Proceed to review."
-                )))
+                )
+                		))
             .onErrorResume(FdOpeningService.DuplicateJourneyException.class, e ->
                 Mono.just(ResponseEntity
                     .status(HttpStatus.CONFLICT)

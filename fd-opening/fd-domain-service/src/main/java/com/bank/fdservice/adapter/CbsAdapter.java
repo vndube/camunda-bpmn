@@ -136,10 +136,14 @@ public class CbsAdapter {
     // ── CBS-specific exceptions (mapped to BPMN error codes in job worker) ─
 
     public static class CbsRejectionException extends RuntimeException {
-        public CbsRejectionException(String msg) { super(msg); }
+        private static final long serialVersionUID = 1L;
+
+		public CbsRejectionException(String msg) { super(msg); }
     }
 
     public static class CbsUnavailableException extends RuntimeException {
-        public CbsUnavailableException(String msg) { super(msg); }
+        private static final long serialVersionUID = 1L;
+
+		public CbsUnavailableException(String msg) { super(msg); }
     }
 }

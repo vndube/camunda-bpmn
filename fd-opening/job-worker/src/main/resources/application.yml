@@ -1,40 +1,36 @@
-server:
-  port: 9998
-
 spring:
   application:
-    name: $lservice
+    name: fd-job-worker
+  threads.virtual.enabled: true
 
-springdoc:
-  swagger-ui:
-    path: /swagger-ui.html
-    
+# ── Camunda Zeebe ──────────────────────────────────────────────────────────
+zeebe:
+  client:
+    broker:
+      gateway-address: ${ZEEBE_GATEWAY_ADDRESS:localhost:26500}
+    security:
+      plaintext: true
+    worker:
+      default-name: fd-job-worker
+      default-max-jobs-active: 32
+      default-job-timeout: PT30S
+      default-poll-interval: PT100MS
 
-#httpclient:
-#  reactiveHttpClient: retry
+# ── AWS S3 ─────────────────────────────────────────────────────────────────
+aws:
+  s3:
+    bucket-name: ${S3_FD_PAYLOAD_BUCKET:fd-payload-bucket}
+    region: ${AWS_REGION:ap-south-1}
+    prefix: fd-requests/
 
-http:
-  connection:
-     max-total-connection: 60
-     max-connection-per-route: 60
-#     socket-timeout: 30 
-#     connection-timeout: 30
-#     timeout-to-live: 5 
+# ── FD Domain Service ──────────────────────────────────────────────────────
+fd-domain:
+  base-url: ${FD_DOMAIN_SERVICE_URL:http://fd-domain-service:8082}
+  timeout-seconds: 20
+  connect-timeout-seconds: 5
 
-httpcall:
-  retry:
-    max: 4
-    delay: 2
-    delayUnit: seconds
-    isFixedDelay: true
-#    delay: 200
-#    delayUnit: millis
+logging:
+  level:
+    com.bank: DEBUG
+    io.camunda.zeebe: INFO
 
-
-ctmcred:
-  req: true
-  certs-creds:
-  - ctmId: email-cred
-    type: SECRETS
-    url: ${DB_SEC_URL:http://sandbox-service.uat.svc.cluster.local:8080/v1/fetch/path/api/v1/ctm/fetchsecrete}
-    keys: ${CTM_KEYS:{'EMAIL_KEY':'a13ab9cff0b94cb8a23075765df235f58837650cf97b454f8509a010379a67d8'}}

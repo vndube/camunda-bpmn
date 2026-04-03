@@ -8,7 +8,7 @@
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.3.0</version>
+    <version>3.5.3</version>
     <relativePath/>
   </parent>
 
@@ -37,7 +37,7 @@
     <!-- Camunda Zeebe Client -->
     <dependency>
       <groupId>io.camunda</groupId>
-      <artifactId>zeebe-client-java</artifactId>
+      <artifactId>spring-zeebe-starter</artifactId>
       <version>${zeebe.version}</version>
     </dependency>
 
