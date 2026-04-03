@@ -34,6 +34,7 @@ graph TD
   fd_domain_service ---> | persist | postgres
 ```
   
+<img width="732" height="585" alt="image" src="https://github.com/user-attachments/assets/6c73b189-6d00-4407-8747-5e5fe0a93fff" />
 
 ---
 
