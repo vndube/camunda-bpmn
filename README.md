@@ -9,7 +9,7 @@ fd-opening/
 ├── job-worker/                  Zeebe Job Workers (Spring Boot)
 ├── fd-domain-service/           FD Domain Service (Spring WebFlux + R2DBC)
 └── docker-compose.yml           Local dev stack
-```
+
 graph TD
   mobile_bff[Mobile BFF]
   operate[Operate]
@@ -32,7 +32,7 @@ graph TD
   fd_job_worker ---> | persist in draft | fd_domain_service
   fd_job_worker ---> | open in CBS | fd_domain_service
   fd_domain_service ---> | persist | postgres
-
+```
   
 
 ---
